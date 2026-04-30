@@ -227,6 +227,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             ...images.map((imageUrl) => ({
               type: "input_image" as const,
               image_url: imageUrl,
+              detail: "auto" as const,
             })),
           ],
         },
