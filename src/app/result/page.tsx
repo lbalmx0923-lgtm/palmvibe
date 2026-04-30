@@ -37,8 +37,10 @@ function normalizeInsights(value: unknown): string[] {
 function parseStoredResult(): StoredResult | null {
   if (typeof window === "undefined") return null;
 
-  const rawMode = sessionStorage.getItem("palmvibe_mode");
-  const rawReport = sessionStorage.getItem("palmvibe_report");
+  const rawMode =
+    sessionStorage.getItem("palmvibe_mode") ?? localStorage.getItem("palmvibe_mode");
+  const rawReport =
+    sessionStorage.getItem("palmvibe_report") ?? localStorage.getItem("palmvibe_report");
 
   if (!rawMode || !rawReport) return null;
   if (rawMode !== "single" && rawMode !== "compatibility") return null;

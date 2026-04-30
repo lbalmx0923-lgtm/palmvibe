@@ -83,8 +83,11 @@ export default function UploadPage() {
         throw new Error(errorMessageFromApi);
       }
 
-      sessionStorage.setItem("palmvibe_report", JSON.stringify(data));
+      const serializedReport = JSON.stringify(data);
+      sessionStorage.setItem("palmvibe_report", serializedReport);
       sessionStorage.setItem("palmvibe_mode", mode);
+      localStorage.setItem("palmvibe_report", serializedReport);
+      localStorage.setItem("palmvibe_mode", mode);
       router.push("/result");
     } catch (error) {
       setErrorMessage(
