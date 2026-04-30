@@ -84,11 +84,14 @@ export default function UploadPage() {
       }
 
       const serializedReport = JSON.stringify(data);
+      const reportId = crypto.randomUUID();
       sessionStorage.setItem("palmvibe_report", serializedReport);
       sessionStorage.setItem("palmvibe_mode", mode);
+      sessionStorage.setItem("palmvibe_report_id", reportId);
       localStorage.setItem("palmvibe_report", serializedReport);
       localStorage.setItem("palmvibe_mode", mode);
-      router.push("/result");
+      localStorage.setItem("palmvibe_report_id", reportId);
+      router.push(`/result?report_id=${encodeURIComponent(reportId)}`);
     } catch (error) {
       setErrorMessage(
         error instanceof Error

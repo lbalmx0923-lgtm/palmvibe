@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Mode = "single" | "compatibility";
 
@@ -158,11 +158,47 @@ function FullReportValue({ value, depth }: { value: unknown; depth: number }) {
   return <span>{JSON.stringify(value)}</span>;
 }
 
+type PaidStatus = "loading" | "paid" | "unpaid";
+
+function resolveReportIdFromClient(): string | null {
+  if (typeof window === "undefined") return null;
+  return (
+    new URLSearchParams(window.location.search).get("report_id") ??
+    sessionStorage.getItem("palmvibe_report_id") ??
+    localStorage.getItem("palmvibe_report_id")
+  );
+}
+
 function ResultPageContent() {
   const storedResult = useMemo(() => parseStoredResult(), []);
-  const isUnlocked = useMemo(() => {
-    if (typeof window === "undefined") return false;
-    return new URLSearchParams(window.location.search).get("unlocked") === "true";
+  const [paidStatus, setPaidStatus] = useState<PaidStatus>(() => {
+    if (typeof window === "undefined") return "unpaid";
+    return resolveReportIdFromClient() ? "loading" : "unpaid";
+  });
+
+  useEffect(() => {
+    const reportId = resolveReportIdFromClient();
+    if (!reportId) {
+      setPaidStatus("unpaid");
+      return;
+    }
+
+    let cancelled = false;
+    fetch(`/api/check-paid?report_id=${encodeURIComponent(reportId)}`)
+      .then((response) =>
+        response.json().catch(() => ({ paid: false })) as Promise<{ paid?: boolean }>
+      )
+      .then((data) => {
+        if (cancelled) return;
+        setPaidStatus(data.paid === true ? "paid" : "unpaid");
+      })
+      .catch(() => {
+        if (!cancelled) setPaidStatus("unpaid");
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (!storedResult) {
@@ -195,26 +231,45 @@ function ResultPageContent() {
       ? compatibilityCheckoutUrl
       : singleCheckoutUrl;
   const hasCheckoutUrl = checkoutUrl.trim().length > 0;
+  const isPaid = paidStatus === "paid";
+  const activeReportId = resolveReportIdFromClient();
 
   const handleCheckout = () => {
-    if (!hasCheckoutUrl || isUnlocked) return;
-    const rawReport = sessionStorage.getItem("palmvibe_report");
+    if (!hasCheckoutUrl || isPaid || paidStatus === "loading" || !activeReportId) return;
+
+    const rawReport =
+      sessionStorage.getItem("palmvibe_report") ??
+      localStorage.getItem("palmvibe_report");
     if (rawReport) {
       sessionStorage.setItem("palmvibe_report", rawReport);
+      localStorage.setItem("palmvibe_report", rawReport);
     }
     sessionStorage.setItem("palmvibe_mode", storedResult.mode);
-    window.location.href = checkoutUrl.trim();
+    localStorage.setItem("palmvibe_mode", storedResult.mode);
+
+    sessionStorage.setItem("palmvibe_report_id", activeReportId);
+    localStorage.setItem("palmvibe_report_id", activeReportId);
+
+    const url = new URL(checkoutUrl.trim());
+    url.searchParams.set("checkout[custom][report_id]", activeReportId);
+    window.location.href = url.toString();
   };
 
-  const primaryCtaLabel = isUnlocked
+  const primaryCtaLabel = isPaid
     ? "Report unlocked"
-    : !hasCheckoutUrl
-      ? "Payment link not configured"
-      : storedResult.mode === "compatibility"
-        ? "Unlock Full Compatibility Report — $4.99"
-        : "Unlock Full Palm Report — $2.99";
+    : paidStatus === "loading"
+      ? "Checking payment…"
+      : !hasCheckoutUrl
+        ? "Payment link not configured"
+        : storedResult.mode === "compatibility"
+          ? "Unlock Full Compatibility Report — $4.99"
+          : "Unlock Full Palm Report — $2.99";
 
-  const ctaDisabled = isUnlocked || !hasCheckoutUrl;
+  const ctaDisabled =
+    paidStatus === "loading" ||
+    isPaid ||
+    !hasCheckoutUrl ||
+    activeReportId === null;
 
   const badgeText =
     storedResult.mode === "compatibility"
@@ -277,6 +332,11 @@ function ResultPageContent() {
             {badgeText}
           </div>
           <h1 className="text-2xl font-semibold">{title}</h1>
+          {paidStatus === "loading" ? (
+            <p className="text-center text-sm text-zinc-400">
+              Verifying unlock status…
+            </p>
+          ) : null}
         </header>
 
         {score !== null ? (
@@ -331,7 +391,7 @@ function ResultPageContent() {
           >
             {primaryCtaLabel}
           </button>
-          {!isUnlocked ? (
+          {!isPaid && paidStatus !== "loading" ? (
             <p className="text-center text-xs text-zinc-400">
               One-time payment. No subscription.
             </p>
@@ -339,7 +399,7 @@ function ResultPageContent() {
         </div>
 
         <section className="rounded-2xl border border-dashed border-violet-300/30 bg-black/25 p-4">
-          {isUnlocked ? (
+          {isPaid ? (
             <>
               <h2 className="text-base font-semibold text-zinc-100">Your full report</h2>
               <div className="mt-4">
@@ -378,7 +438,7 @@ function ResultPageContent() {
           {primaryCtaLabel}
         </button>
 
-        {!isUnlocked ? (
+        {!isPaid && paidStatus !== "loading" ? (
           <p className="text-center text-xs text-zinc-400">
             One-time payment. No subscription.
           </p>
