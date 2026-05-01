@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { LegalFooter } from "../components/legal-footer";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
@@ -236,16 +237,19 @@ function ResultPageContent() {
   if (!storedResult) {
     return (
       <main className="min-h-screen bg-[#09090f] px-4 py-6 text-white">
-        <div className="mx-auto flex w-full max-w-md flex-col gap-5 rounded-2xl border border-white/10 bg-white/5 p-5 sm:max-w-xl">
-          <h1 className="text-2xl font-semibold">
-            No report found. Please upload your palm photo first.
-          </h1>
-          <Link
-            href="/upload"
-            className="inline-flex items-center justify-center rounded-xl bg-white px-4 py-3 text-sm font-semibold text-[#09090f] transition hover:bg-white/90"
-          >
-            Go to Upload
-          </Link>
+        <div className="mx-auto flex w-full max-w-md flex-col gap-5 sm:max-w-xl">
+          <div className="flex flex-col gap-5 rounded-2xl border border-white/10 bg-white/5 p-5">
+            <h1 className="text-2xl font-semibold">
+              No report found. Please upload your palm photo first.
+            </h1>
+            <Link
+              href="/upload"
+              className="inline-flex items-center justify-center rounded-xl bg-white px-4 py-3 text-sm font-semibold text-[#09090f] transition hover:bg-white/90"
+            >
+              Go to Upload
+            </Link>
+          </div>
+          <LegalFooter />
         </div>
       </main>
     );
@@ -367,7 +371,8 @@ function ResultPageContent() {
 
   return (
     <main className="min-h-screen bg-[#09090f] px-4 py-6 text-white">
-      <div className="mx-auto flex w-full max-w-md flex-col gap-5 rounded-2xl border border-white/10 bg-white/5 p-5 sm:max-w-xl">
+      <div className="mx-auto flex w-full max-w-md flex-col gap-5 sm:max-w-xl">
+        <div className="flex flex-col gap-5 rounded-2xl border border-white/10 bg-white/5 p-5">
         <header className="space-y-2">
           <div className="inline-flex w-fit rounded-full border border-violet-300/30 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200">
             {badgeText}
@@ -491,6 +496,8 @@ function ResultPageContent() {
         >
           Back to Upload
         </Link>
+        </div>
+        <LegalFooter />
       </div>
     </main>
   );

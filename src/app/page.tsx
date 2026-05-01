@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, HeartHandshake, Lock, ScanLine } from "lucide-react";
+import { LegalFooter } from "./components/legal-footer";
 
 const features = [
   {
@@ -95,6 +96,7 @@ export default function HomePage() {
             ))}
           </section>
         </main>
+        <LegalFooter />
       </div>
     </div>
   );
