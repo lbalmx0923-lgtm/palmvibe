@@ -160,10 +160,17 @@ function FullReportValue({ value, depth }: { value: unknown; depth: number }) {
 
 type PaidStatus = "loading" | "paid" | "unpaid";
 
-function resolveReportIdFromClient(): string | null {
+/** Only the URL `report_id` is used to verify payment server-side. Never use storage as payment proof. */
+function getReportIdFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get("report_id");
+}
+
+/** For Lemon checkout custom data only — may come from URL or storage (not payment proof). */
+function getReportIdForCheckout(): string | null {
   if (typeof window === "undefined") return null;
   return (
-    new URLSearchParams(window.location.search).get("report_id") ??
+    getReportIdFromUrl() ??
     sessionStorage.getItem("palmvibe_report_id") ??
     localStorage.getItem("palmvibe_report_id")
   );
@@ -173,11 +180,11 @@ function ResultPageContent() {
   const storedResult = useMemo(() => parseStoredResult(), []);
   const [paidStatus, setPaidStatus] = useState<PaidStatus>(() => {
     if (typeof window === "undefined") return "unpaid";
-    return resolveReportIdFromClient() ? "loading" : "unpaid";
+    return getReportIdFromUrl() ? "loading" : "unpaid";
   });
 
   useEffect(() => {
-    const reportId = resolveReportIdFromClient();
+    const reportId = getReportIdFromUrl();
     if (!reportId) {
       setPaidStatus("unpaid");
       return;
@@ -232,10 +239,10 @@ function ResultPageContent() {
       : singleCheckoutUrl;
   const hasCheckoutUrl = checkoutUrl.trim().length > 0;
   const isPaid = paidStatus === "paid";
-  const activeReportId = resolveReportIdFromClient();
+  const checkoutReportId = getReportIdForCheckout();
 
   const handleCheckout = () => {
-    if (!hasCheckoutUrl || isPaid || paidStatus === "loading" || !activeReportId) return;
+    if (!hasCheckoutUrl || isPaid || paidStatus === "loading" || !checkoutReportId) return;
 
     const rawReport =
       sessionStorage.getItem("palmvibe_report") ??
@@ -247,11 +254,11 @@ function ResultPageContent() {
     sessionStorage.setItem("palmvibe_mode", storedResult.mode);
     localStorage.setItem("palmvibe_mode", storedResult.mode);
 
-    sessionStorage.setItem("palmvibe_report_id", activeReportId);
-    localStorage.setItem("palmvibe_report_id", activeReportId);
+    sessionStorage.setItem("palmvibe_report_id", checkoutReportId);
+    localStorage.setItem("palmvibe_report_id", checkoutReportId);
 
     const url = new URL(checkoutUrl.trim());
-    url.searchParams.set("checkout[custom][report_id]", activeReportId);
+    url.searchParams.set("checkout[custom][report_id]", checkoutReportId);
     window.location.href = url.toString();
   };
 
@@ -269,7 +276,7 @@ function ResultPageContent() {
     paidStatus === "loading" ||
     isPaid ||
     !hasCheckoutUrl ||
-    activeReportId === null;
+    checkoutReportId === null;
 
   const badgeText =
     storedResult.mode === "compatibility"
@@ -334,7 +341,7 @@ function ResultPageContent() {
           <h1 className="text-2xl font-semibold">{title}</h1>
           {paidStatus === "loading" ? (
             <p className="text-center text-sm text-zinc-400">
-              Verifying unlock status…
+              Checking payment status...
             </p>
           ) : null}
         </header>
