@@ -2,7 +2,8 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 
 type Mode = "single" | "compatibility";
 
@@ -158,55 +159,79 @@ function FullReportValue({ value, depth }: { value: unknown; depth: number }) {
   return <span>{JSON.stringify(value)}</span>;
 }
 
-type PaidStatus = "loading" | "paid" | "unpaid";
-
-/** Only the URL `report_id` is used to verify payment server-side. Never use storage as payment proof. */
-function getReportIdFromUrl(): string | null {
+/**
+ * Which report ID to verify with `/api/check-paid`. Does NOT prove payment — only selects the ID
+ * passed to the server. Priority: URL `report_id` → sessionStorage → localStorage.
+ * Never trusts `unlocked=true` URL param.
+ */
+function resolveReportId(): string | null {
   if (typeof window === "undefined") return null;
-  return new URLSearchParams(window.location.search).get("report_id");
-}
 
-/** For Lemon checkout linking only — not used as proof of payment. Order: URL, then local, then session. */
-function getReportIdForCheckout(): string | null {
-  if (typeof window === "undefined") return null;
-  return (
-    getReportIdFromUrl() ??
-    localStorage.getItem("palmvibe_report_id") ??
-    sessionStorage.getItem("palmvibe_report_id")
-  );
+  const fromUrl = new URLSearchParams(window.location.search).get("report_id");
+  const fromSession = sessionStorage.getItem("palmvibe_report_id");
+  const fromLocal = localStorage.getItem("palmvibe_report_id");
+
+  const raw = fromUrl ?? fromSession ?? fromLocal;
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function ResultPageContent() {
+  const searchParams = useSearchParams();
   const storedResult = useMemo(() => parseStoredResult(), []);
-  const [paidStatus, setPaidStatus] = useState<PaidStatus>(() => {
-    if (typeof window === "undefined") return "unpaid";
-    return getReportIdFromUrl() ? "loading" : "unpaid";
+
+  /** Re-fetch when Next.js replaces search params client-side (`report_id`). */
+  const urlReportHint = searchParams?.get("report_id") ?? "";
+
+  const [loadingPaidCheck, setLoadingPaidCheck] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return Boolean(resolveReportId());
   });
+  const [unlocked, setUnlocked] = useState(false);
 
   useEffect(() => {
-    const reportId = getReportIdFromUrl();
-    if (!reportId) {
-      setPaidStatus("unpaid");
-      return;
+    let cancelled = false;
+
+    async function runPaidCheck() {
+      const reportId = resolveReportId();
+      console.log("Resolved reportId:", reportId);
+
+      if (!reportId) {
+        setUnlocked(false);
+        setLoadingPaidCheck(false);
+        return;
+      }
+
+      setLoadingPaidCheck(true);
+      try {
+        const response = await fetch(
+          `/api/check-paid?report_id=${encodeURIComponent(reportId)}`
+        );
+        const data = (await response.json()) as { paid?: boolean };
+        console.log("Paid check result:", data);
+
+        if (cancelled) return;
+
+        setUnlocked(data.paid === true);
+      } catch (error) {
+        console.error("Paid check fetch failed:", error);
+        if (!cancelled) {
+          setUnlocked(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingPaidCheck(false);
+        }
+      }
     }
 
-    let cancelled = false;
-    fetch(`/api/check-paid?report_id=${encodeURIComponent(reportId)}`)
-      .then((response) =>
-        response.json().catch(() => ({ paid: false })) as Promise<{ paid?: boolean }>
-      )
-      .then((data) => {
-        if (cancelled) return;
-        setPaidStatus(data.paid === true ? "paid" : "unpaid");
-      })
-      .catch(() => {
-        if (!cancelled) setPaidStatus("unpaid");
-      });
+    void runPaidCheck();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [urlReportHint]);
 
   if (!storedResult) {
     return (
@@ -238,11 +263,10 @@ function ResultPageContent() {
       ? compatibilityCheckoutUrl
       : singleCheckoutUrl;
   const hasCheckoutUrl = checkoutUrl.trim().length > 0;
-  const isPaid = paidStatus === "paid";
-  const checkoutReportId = getReportIdForCheckout();
+  const resolvedReportId = resolveReportId();
 
   const handleCheckout = () => {
-    if (!hasCheckoutUrl || isPaid || paidStatus === "loading" || !checkoutReportId) return;
+    if (!hasCheckoutUrl || unlocked || loadingPaidCheck || !resolvedReportId) return;
 
     const rawReport =
       sessionStorage.getItem("palmvibe_report") ??
@@ -254,10 +278,10 @@ function ResultPageContent() {
     sessionStorage.setItem("palmvibe_mode", storedResult.mode);
     localStorage.setItem("palmvibe_mode", storedResult.mode);
 
-    sessionStorage.setItem("palmvibe_report_id", checkoutReportId);
-    localStorage.setItem("palmvibe_report_id", checkoutReportId);
+    sessionStorage.setItem("palmvibe_report_id", resolvedReportId);
+    localStorage.setItem("palmvibe_report_id", resolvedReportId);
 
-    const reportId = checkoutReportId;
+    const reportId = resolvedReportId;
     const returnUrl = `${window.location.origin}/result?report_id=${encodeURIComponent(reportId)}`;
 
     const url = new URL(checkoutUrl.trim());
@@ -268,12 +292,13 @@ function ResultPageContent() {
       "checkout[product_options][receipt_button_text]",
       "View Full Report"
     );
+    console.log("Redirecting to Lemon with reportId:", reportId, url.toString());
     window.location.href = url.toString();
   };
 
-  const primaryCtaLabel = isPaid
+  const primaryCtaLabel = unlocked
     ? "Report unlocked"
-    : paidStatus === "loading"
+    : loadingPaidCheck
       ? "Checking payment…"
       : !hasCheckoutUrl
         ? "Payment link not configured"
@@ -282,10 +307,10 @@ function ResultPageContent() {
           : "Unlock Full Palm Report — $2.99";
 
   const ctaDisabled =
-    paidStatus === "loading" ||
-    isPaid ||
+    loadingPaidCheck ||
+    unlocked ||
     !hasCheckoutUrl ||
-    checkoutReportId === null;
+    resolvedReportId === null;
 
   const badgeText =
     storedResult.mode === "compatibility"
@@ -348,7 +373,7 @@ function ResultPageContent() {
             {badgeText}
           </div>
           <h1 className="text-2xl font-semibold">{title}</h1>
-          {paidStatus === "loading" ? (
+          {loadingPaidCheck ? (
             <p className="text-center text-sm text-zinc-400">
               Checking payment status...
             </p>
@@ -407,7 +432,7 @@ function ResultPageContent() {
           >
             {primaryCtaLabel}
           </button>
-          {!isPaid && paidStatus !== "loading" ? (
+          {!unlocked && !loadingPaidCheck ? (
             <p className="text-center text-xs text-zinc-400">
               One-time payment. No subscription.
             </p>
@@ -415,7 +440,7 @@ function ResultPageContent() {
         </div>
 
         <section className="rounded-2xl border border-dashed border-violet-300/30 bg-black/25 p-4">
-          {isPaid ? (
+          {unlocked === true ? (
             <>
               <h2 className="text-base font-semibold text-zinc-100">Your full report</h2>
               <div className="mt-4">
@@ -454,7 +479,7 @@ function ResultPageContent() {
           {primaryCtaLabel}
         </button>
 
-        {!isPaid && paidStatus !== "loading" ? (
+        {!unlocked && !loadingPaidCheck ? (
           <p className="text-center text-xs text-zinc-400">
             One-time payment. No subscription.
           </p>
@@ -471,8 +496,25 @@ function ResultPageContent() {
   );
 }
 
-const ResultPage = dynamic(async () => ResultPageContent, {
-  ssr: false,
-});
+function ResultPageWithSuspense() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#09090f] px-4 py-6 text-white">
+          <div className="mx-auto flex w-full max-w-md flex-col gap-5 rounded-2xl border border-white/10 bg-white/5 p-5 text-center text-sm text-zinc-400 sm:max-w-xl">
+            Checking payment status...
+          </div>
+        </main>
+      }
+    >
+      <ResultPageContent />
+    </Suspense>
+  );
+}
+
+const ResultPage = dynamic(
+  async () => ({ default: ResultPageWithSuspense }),
+  { ssr: false }
+);
 
 export default ResultPage;
