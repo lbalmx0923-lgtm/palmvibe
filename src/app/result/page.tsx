@@ -166,13 +166,13 @@ function getReportIdFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get("report_id");
 }
 
-/** For Lemon checkout custom data only — may come from URL or storage (not payment proof). */
+/** For Lemon checkout linking only — not used as proof of payment. Order: URL, then local, then session. */
 function getReportIdForCheckout(): string | null {
   if (typeof window === "undefined") return null;
   return (
     getReportIdFromUrl() ??
-    sessionStorage.getItem("palmvibe_report_id") ??
-    localStorage.getItem("palmvibe_report_id")
+    localStorage.getItem("palmvibe_report_id") ??
+    sessionStorage.getItem("palmvibe_report_id")
   );
 }
 
@@ -257,8 +257,17 @@ function ResultPageContent() {
     sessionStorage.setItem("palmvibe_report_id", checkoutReportId);
     localStorage.setItem("palmvibe_report_id", checkoutReportId);
 
+    const reportId = checkoutReportId;
+    const returnUrl = `${window.location.origin}/result?report_id=${encodeURIComponent(reportId)}`;
+
     const url = new URL(checkoutUrl.trim());
-    url.searchParams.set("checkout[custom][report_id]", checkoutReportId);
+    url.searchParams.set("checkout[custom][report_id]", reportId);
+    url.searchParams.set("checkout[product_options][redirect_url]", returnUrl);
+    url.searchParams.set("checkout[product_options][receipt_link_url]", returnUrl);
+    url.searchParams.set(
+      "checkout[product_options][receipt_button_text]",
+      "View Full Report"
+    );
     window.location.href = url.toString();
   };
 
